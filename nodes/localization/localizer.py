@@ -40,7 +40,7 @@ class Localizer:
         azimuth_correction = self.utm_projection.get_factors(msg.longitude, msg.latitude).meridian_convergence
         corrected_azimuth_deg = msg.azimuth - azimuth_correction
         corrected_azimuth_rad = math.radians(corrected_azimuth_deg)
-        
+
         # convert azimuth to yaw angle
         def convert_azimuth_to_yaw(azimuth):
             """
@@ -72,6 +72,17 @@ class Localizer:
         current_pose_msg.pose.position.z = z
         current_pose_msg.pose.orientation = orientation
         self.current_pose_pub.publish(current_pose_msg)
+
+        # Calculate velocity magnitude (2D norm)
+        velocity = math.sqrt(msg.north_velocity ** 2 + msg.east_velocity ** 2)
+
+        # Create and publish TwistStamped
+        velocity_msg = TwistStamped()
+        velocity_msg.header.stamp = msg.header.stamp
+        velocity_msg.header.frame_id = "base_link"
+        velocity_msg.twist.linear.x = velocity
+
+        self.current_velocity_pub.publish(velocity_msg)
 
         print(msg.latitude, msg.longitude)
 
