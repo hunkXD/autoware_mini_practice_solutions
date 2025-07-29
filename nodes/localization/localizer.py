@@ -36,6 +36,12 @@ class Localizer:
         self.br = TransformBroadcaster()
 
     def transform_coordinates(self, msg):
+
+        num1, num2 = self.transformer.transform(msg.latitude, msg.longitude)
+        xpos = num1 - self.origin_x
+        ypos = num2 - self.origin_y
+
+
         # calculate azimuth correction
         azimuth_correction = self.utm_projection.get_factors(msg.longitude, msg.latitude).meridian_convergence
         corrected_azimuth_deg = msg.azimuth - azimuth_correction
@@ -62,14 +68,15 @@ class Localizer:
         # Convert yaw to quaternion
         x, y, z, w = quaternion_from_euler(0, 0, yaw)
         orientation = Quaternion(x, y, z, w)
+        zpos = msg.height - self.undulation
 
         # publish current pose
         current_pose_msg = PoseStamped()
         current_pose_msg.header.stamp = msg.header.stamp
         current_pose_msg.header.frame_id = "map"
-        current_pose_msg.pose.position.x = x
-        current_pose_msg.pose.position.y = y
-        current_pose_msg.pose.position.z = z
+        current_pose_msg.pose.position.x = xpos
+        current_pose_msg.pose.position.y = ypos
+        current_pose_msg.pose.position.z = zpos
         current_pose_msg.pose.orientation = orientation
         self.current_pose_pub.publish(current_pose_msg)
 
@@ -83,6 +90,22 @@ class Localizer:
         velocity_msg.twist.linear.x = velocity
 
         self.current_velocity_pub.publish(velocity_msg)
+
+        # create a transform message
+        t = TransformStamped()
+
+        # fill in the transform message - t
+        t.header.frame_id = "map"
+        t.child_frame_id = "base_link"
+        t.header.stamp = msg.header.stamp
+        t.transform.translation.x = xpos
+        t.transform.translation.y = ypos
+        t.transform.translation.z = zpos
+
+        t.transform.rotation = orientation
+
+        # publish transform
+        self.br.sendTransform(t)
 
         print(msg.latitude, msg.longitude)
 
