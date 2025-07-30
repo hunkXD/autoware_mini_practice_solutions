@@ -107,8 +107,6 @@ class Localizer:
         # publish transform
         self.br.sendTransform(t)
 
-        # print(msg.latitude, msg.longitude)
-
 
     def run(self):
         rospy.spin()
