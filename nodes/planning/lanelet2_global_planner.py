@@ -1,3 +1,5 @@
+#! /usr/bin/env python3
+
 # All these imports from lanelet2 library should be sufficient
 import lanelet2
 from lanelet2.io import Origin, load
@@ -63,15 +65,18 @@ class Lanelet2GlobalPlanner:
         # Publishers
 
         # Subscribers
-        rospy.Subscriber('/localization/current_pose', PoseStamped, self.current_pose_callback, queue_size=1, tcp_nodelay=True)
+        rospy.Subscriber('/localization/current_pose', PoseStamped, self.current_pose_callback, queue_size=1)
         # rospy.Subscriber('/localization/current_velocity', TwistStamped, self.current_velocity_callback, queue_size=1, tcp_nodelay=True)
-        rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goal_callback, queue_size=None, tcp_nodelay=True)
+        rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goal_point_callback, queue_size=1)
+
+    def convert_2_waypoints(self, path):
+        for lanelet in path:
+            if "speed_ref" in lanelet:
+                
+    def current_pose_callback(self, msg):
+        self.current_location = BasicPoint2d(msg.pose.position.x, msg.pose.position.y)
 
     def goal_point_callback(self, msg):
-
-        if self.goal_point is None:
-            rospy.logwarn("No route found after entered goal point!")
-            return
 
         # log info
         # loginfo message about receiving the goal point
@@ -80,7 +85,7 @@ class Lanelet2GlobalPlanner:
                       msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z,
                       msg.pose.orientation.w, msg.header.frame_id)
 
-        self.current_location = BasicPoint2d(msg.pose.position.x, msg.pose.position.y)
+        self.goal_point = BasicPoint2d(msg.pose.position.x, msg.pose.position.y)
 
         # get start and end lanelets
         start_lanelet = findNearest(self.lanelet2_map.laneletLayer, self.current_location, 1)[0][1]
@@ -88,18 +93,26 @@ class Lanelet2GlobalPlanner:
         # find routing graph
         route = self.graph.getRoute(start_lanelet, goal_lanelet, 0, True)
 
+        if route is None:
+           rospy.logwarn("No route found after entered goal point! Try again.")
+           return
+
         # find shortest path
         path = route.shortestPath()
         # This returns LaneletSequence to a point where a lane change would be necessary to continue
         path_no_lane_change = path.getRemainingLane(start_lanelet)
 
-        print(path_no_lane_change)
-        
+#        print(path_no_lane_change)
+
+        # Convert lanelet path to waypoints
+        waypoints = self.convert_to_waypoints(path, route)
+
+
     def run(self):
         rospy.spin()
 
 if __name__ == '__main__':
-    rospy.init_node('lanelet2_global_planner')
+    rospy.init_node('lanelet2_global_planner', log_level=rospy.INFO)
     node = Lanelet2GlobalPlanner()
     node.run()
 
