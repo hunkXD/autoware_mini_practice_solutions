@@ -28,14 +28,12 @@ class PurePursuitFollower:
 
         # Publishers
         self.vehicle_cmd_pub = rospy.Publisher('/control/vehicle_cmd', VehicleCmd, queue_size=10)
-        self.current_pose_pub = rospy.Publisher('current_pose', PoseStamped, queue_size=10)
 
         # Subscribers
         rospy.Subscriber('path', Path, self.path_callback, queue_size=1)
         rospy.Subscriber('/localization/current_pose', PoseStamped, self.current_pose_callback, queue_size=1)
 
     def path_callback(self, msg):
-        # TODO
         # convert waypoints to shapely linestring
         self.path_linestring = LineString([(w.position.x, w.position.y) for w in msg.waypoints])
         # prepare path - creates spatial tree, making the spatial queries more efficient
@@ -56,13 +54,12 @@ class PurePursuitFollower:
 
 
     def current_pose_callback(self, msg):
-
-        # TODO
-        # Create and fill vehicle current_pose message
-        current_pose_msg = PoseStamped()
-        current_pose_msg.header.stamp = msg.header.stamp
-
         if self.path_linestring is None:
+            vehicle_cmd_msg = VehicleCmd()
+            vehicle_cmd_msg.ctrl_cmd.linear_velocity = 0.0
+            # Publish the message
+            self.vehicle_cmd_pub.publish(vehicle_cmd_msg)
+
             return
 
         current_pose = Point([msg.pose.position.x, msg.pose.position.y])
@@ -87,7 +84,7 @@ class PurePursuitFollower:
         vehicle_cmd_msg.ctrl_cmd.linear_velocity = velocity
 
         # Create and fill vehicle command message
-        vehicle_cmd_msg.header.stamp = current_pose_msg.header.stamp
+        vehicle_cmd_msg.header.stamp = msg.header.stamp
         vehicle_cmd_msg.header.frame_id = "base_link"
 
 
