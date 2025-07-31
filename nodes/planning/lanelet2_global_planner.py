@@ -8,9 +8,10 @@ from lanelet2.core import BasicPoint2d
 from lanelet2.geometry import findNearest
 import rospy
 
+from shapely.geometry import Point
 from geometry_msgs.msg import PoseStamped
-from autoware_mini.msg import Waypoint, Path
-
+from autoware_mini.msg import Waypoint, Path, VehicleCmd
+from shapely import distance
 
 
 
@@ -22,6 +23,7 @@ class Lanelet2GlobalPlanner:
         self.lanelet2_map_path = rospy.get_param("~lanelet2_map_path")
         self.speed_limit = rospy.get_param("~speed_limit")
         self.output_frame = rospy.get_param("output_frame")
+        self.distance_to_goal_limit = rospy.get_param("distance_to_goal_limit")
 
         # Create class variable
         self.lanelet2_map = self.load_lanelet2_map(self.lanelet2_map_path)
@@ -41,6 +43,7 @@ class Lanelet2GlobalPlanner:
 
         # Publishers
         self.waypoints_pub = rospy.Publisher('global_path', Path, queue_size=10)
+        self.vehicle_cmd_pub = rospy.Publisher('/control/vehicle_cmd', VehicleCmd, queue_size=10)
 
         # Subscribers
         rospy.Subscriber('/localization/current_pose', PoseStamped, self.current_pose_callback, queue_size=1)
@@ -49,6 +52,23 @@ class Lanelet2GlobalPlanner:
 
     def current_pose_callback(self, msg):
         self.current_location = BasicPoint2d(msg.pose.position.x, msg.pose.position.y)
+        
+        # Assumes that the goal point is stored
+        if self.goal_point is not None:
+            # Convert to Shapely points
+            current_point = Point(self.current_location.x, self.current_location.y)
+            goal_point = Point(self.goal_point.x, self.goal_point.y)
+
+            remaining_dist = current_point.distance(goal_point)
+            if remaining_dist < self.distance_to_goal_limit:
+                self.publish_waypoints([])
+                rospy.loginfo("GOAL HAS BEEN REACHED")
+
+                # Publish stop command
+                vehicle_cmd_msg = VehicleCmd()
+                vehicle_cmd_msg.ctrl_cmd.linear_velocity = 0.0
+                vehicle_cmd_msg.ctrl_cmd.linear_velocity = 0.0
+                self.vehicle_cmd_pub.publish(vehicle_cmd_msg)
 
     def goal_point_callback(self, msg):
 
