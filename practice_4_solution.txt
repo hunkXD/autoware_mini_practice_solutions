@@ -1,0 +1,8 @@
+For task 5 it is required to align the goal point with the end of the path, since a mismatch can lead to unwanted
+behavior of the ego car.
+So basically, I referred to the given instructions, by setting the goal point as end point of the path/waypoints.
+This is done by first getting the 2D coordinates of waypoints to obtain the linestring.
+And in order to set the goal point as end of the waypoints, I interpolated the linestring (but first converted the 2D
+goal_point to a shapely point.
+In the end this projected end point can be used to overwrite the previous goal_point and to set the last waypoint
+coordinate. 

@@ -115,6 +115,26 @@ class Lanelet2GlobalPlanner:
         # Convert lanelet path to waypoints
         self.waypoints = self.convert_2_waypoints(path_no_lane_change)
 
+        # Task 5
+        # Convert waypoints to LineString for interpolation
+        waypoint_coords = [(wp.position.x, wp.position.y) for wp in self.waypoints]
+        path_line = LineString(waypoint_coords)
+
+        # Set to shapely point
+        goal_geom = Point(self.goal_point.x, self.goal_point.y)
+
+        # Find closest point on path to goal
+        projected_dist = path_line.project(goal_geom)
+
+        new_projected_goal_point = path_line.interpolate(projected_dist)
+
+        # Overwrite both goal_point and last waypoint
+        self.goal_point = BasicPoint2d(new_projected_goal_point.x, new_projected_goal_point.y)
+
+        if self.waypoints:
+            self.waypoints[-1].position.x = new_projected_goal_point.x
+            self.waypoints[-1].position.y = new_projected_goal_point.y
+
         # Publish the global path
         self.publish_waypoints(self.waypoints)
 

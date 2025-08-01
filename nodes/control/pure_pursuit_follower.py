@@ -35,7 +35,7 @@ class PurePursuitFollower:
         rospy.Subscriber('/localization/current_pose', PoseStamped, self.current_pose_callback, queue_size=1)
 
     def path_callback(self, msg):
-        if not msg.waypoints:
+        if len(msg.waypoints) <= 1:
             self.path_linestring = None
             return
         # convert waypoints to shapely linestring
