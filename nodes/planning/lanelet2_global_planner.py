@@ -54,9 +54,6 @@ class Lanelet2GlobalPlanner:
 
         self.waypoints = None
 
-        self.current_speed = None
-
-
 
         # internal variables
         # traffic rules
@@ -71,11 +68,7 @@ class Lanelet2GlobalPlanner:
 
         # Subscribers
         rospy.Subscriber('/localization/current_pose', PoseStamped, self.current_pose_callback, queue_size=1)
-        # rospy.Subscriber('/localization/current_velocity', TwistStamped, self.current_velocity_callback, queue_size=1, tcp_nodelay=True)
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goal_point_callback, queue_size=1)
-
-    def current_velocity_callback(self, msg):
-        self.current_speed = msg.twist.linear.x
 
     def current_pose_callback(self, msg):
         self.current_location = BasicPoint2d(msg.pose.position.x, msg.pose.position.y)
