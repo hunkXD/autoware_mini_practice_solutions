@@ -8,7 +8,7 @@ from lanelet2.core import BasicPoint2d
 from lanelet2.geometry import findNearest
 import rospy
 
-from shapely.geometry import Point
+from shapely.geometry import Point, LineString
 from geometry_msgs.msg import PoseStamped
 from autoware_mini.msg import Waypoint, Path, VehicleCmd
 from shapely import distance
@@ -19,11 +19,29 @@ class Lanelet2GlobalPlanner:
     def __init__(self):
 
         # Parameters
+        """
+        Load a lanelet2 map from a file and return it
+        :param lanelet2_map_path: name of the lanelet2 map file
+        :param coordinate_transformer: coordinate transformer
+        :param use_custom_origin: use custom origin
+        :param utm_origin_lat: utm origin latitude
+        :param utm_origin_lon: utm origin longitude
+        :return: lanelet2 map
+        """
+
+        # get parameters
+        self.coordinate_transformer = rospy.get_param("/localization/coordinate_transformer")
+        self.use_custom_origin = rospy.get_param("/localization/use_custom_origin")
+        self.utm_origin_lat = rospy.get_param("/localization/utm_origin_lat")
+        self.utm_origin_lon = rospy.get_param("/localization/utm_origin_lon")
+
         # Reading in the parameter values
         self.lanelet2_map_path = rospy.get_param("~lanelet2_map_path")
         self.speed_limit = rospy.get_param("~speed_limit")
-        self.output_frame = rospy.get_param("output_frame")
-        self.distance_to_goal_limit = rospy.get_param("distance_to_goal_limit")
+        self.output_frame = rospy.get_param("lanelet2_global_planner/output_frame")
+        self.distance_to_goal_limit = rospy.get_param("lanelet2_global_planner/distance_to_goal_limit")
+
+        self.stopped_speed_limit = rospy.get_param("stopped_speed_limit")
 
         # Create class variable
         self.lanelet2_map = self.load_lanelet2_map(self.lanelet2_map_path)
@@ -33,6 +51,12 @@ class Lanelet2GlobalPlanner:
         self.goal_point = None
 
         self.graph = None
+
+        self.waypoints = None
+
+        self.current_speed = None
+
+
 
         # internal variables
         # traffic rules
@@ -50,25 +74,24 @@ class Lanelet2GlobalPlanner:
         # rospy.Subscriber('/localization/current_velocity', TwistStamped, self.current_velocity_callback, queue_size=1, tcp_nodelay=True)
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goal_point_callback, queue_size=1)
 
+    def current_velocity_callback(self, msg):
+        self.current_speed = msg.twist.linear.x
+
     def current_pose_callback(self, msg):
         self.current_location = BasicPoint2d(msg.pose.position.x, msg.pose.position.y)
-        
+
         # Assumes that the goal point is stored
         if self.goal_point is not None:
             # Convert to Shapely points
             current_point = Point(self.current_location.x, self.current_location.y)
             goal_point = Point(self.goal_point.x, self.goal_point.y)
 
-            remaining_dist = current_point.distance(goal_point)
-            if remaining_dist < self.distance_to_goal_limit:
+            remaining_dist = float(current_point.distance(goal_point))
+            if (remaining_dist < self.distance_to_goal_limit):
+                self.goal_point = None
                 self.publish_waypoints([])
                 rospy.loginfo("GOAL HAS BEEN REACHED")
 
-                # Publish stop command
-                vehicle_cmd_msg = VehicleCmd()
-                vehicle_cmd_msg.ctrl_cmd.linear_velocity = 0.0
-                vehicle_cmd_msg.ctrl_cmd.linear_velocity = 0.0
-                self.vehicle_cmd_pub.publish(vehicle_cmd_msg)
 
     def goal_point_callback(self, msg):
 
@@ -97,10 +120,10 @@ class Lanelet2GlobalPlanner:
         path_no_lane_change = path.getRemainingLane(start_lanelet)
 
         # Convert lanelet path to waypoints
-        waypoints = self.convert_2_waypoints(path_no_lane_change)
+        self.waypoints = self.convert_2_waypoints(path_no_lane_change)
 
         # Publish the global path
-        self.publish_waypoints(waypoints)
+        self.publish_waypoints(self.waypoints)
 
     def convert_2_waypoints(self, path):
         waypoints = []
@@ -131,28 +154,13 @@ class Lanelet2GlobalPlanner:
         self.waypoints_pub.publish(path)
 
     def load_lanelet2_map(self, lanelet2_map_path):
-        """
-        Load a lanelet2 map from a file and return it
-        :param lanelet2_map_path: name of the lanelet2 map file
-        :param coordinate_transformer: coordinate transformer
-        :param use_custom_origin: use custom origin
-        :param utm_origin_lat: utm origin latitude
-        :param utm_origin_lon: utm origin longitude
-        :return: lanelet2 map
-        """
-
-        # get parameters
-        coordinate_transformer = rospy.get_param("/localization/coordinate_transformer")
-        use_custom_origin = rospy.get_param("/localization/use_custom_origin")
-        utm_origin_lat = rospy.get_param("/localization/utm_origin_lat")
-        utm_origin_lon = rospy.get_param("/localization/utm_origin_lon")
 
         # Load the map using Lanelet2
-        if coordinate_transformer == "utm":
-            projector = UtmProjector(Origin(utm_origin_lat, utm_origin_lon), use_custom_origin, False)
+        if self.coordinate_transformer == "utm":
+            projector = UtmProjector(Origin(self.utm_origin_lat, self.utm_origin_lon), self.use_custom_origin, False)
         else:
             raise ValueError(
-                'Unknown coordinate_transformer for loading the Lanelet2 map ("utm" should be used): ' + coordinate_transformer)
+                'Unknown coordinate_transformer for loading the Lanelet2 map ("utm" should be used): ' + self.coordinate_transformer)
 
         lanelet2_map = load(lanelet2_map_path, projector)
 

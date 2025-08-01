@@ -4,6 +4,7 @@ import rospy
 
 from autoware_mini.msg import Path, VehicleCmd
 from geometry_msgs.msg import PoseStamped
+from pyparsing import empty
 
 from shapely.geometry import LineString, Point
 from shapely import prepare, distance
@@ -34,6 +35,9 @@ class PurePursuitFollower:
         rospy.Subscriber('/localization/current_pose', PoseStamped, self.current_pose_callback, queue_size=1)
 
     def path_callback(self, msg):
+        if not msg.waypoints:
+            self.path_linestring = None
+            return
         # convert waypoints to shapely linestring
         self.path_linestring = LineString([(w.position.x, w.position.y) for w in msg.waypoints])
         # prepare path - creates spatial tree, making the spatial queries more efficient
@@ -57,9 +61,9 @@ class PurePursuitFollower:
         if self.path_linestring is None:
             vehicle_cmd_msg = VehicleCmd()
             vehicle_cmd_msg.ctrl_cmd.linear_velocity = 0.0
+            self.distance_to_velocity_interpolator = None
             # Publish the message
             self.vehicle_cmd_pub.publish(vehicle_cmd_msg)
-
             return
 
         current_pose = Point([msg.pose.position.x, msg.pose.position.y])
