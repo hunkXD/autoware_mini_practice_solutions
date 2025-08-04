@@ -5,4 +5,4 @@ This is done by first getting the 2D coordinates of waypoints to obtain the line
 And in order to set the goal point as end of the waypoints, I interpolated the linestring (but first converted the 2D
 goal_point to a shapely point.
 In the end this projected end point can be used to overwrite the previous goal_point and to set the last waypoint
-coordinate. 
+coordinate.
