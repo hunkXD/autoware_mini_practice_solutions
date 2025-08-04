@@ -34,10 +34,10 @@ class ClusterDetector:
     def cluster_callback(self, msg):
         data = numpify(msg)
         points = structured_to_unstructured(data[['x', 'y', 'z']], dtype=np.float32)
-        print("Points shape: ", points.shape)
 
         ones = np.ones((points.shape[0], 1), dtype=np.float32)
         points = np.hstack((points, ones))  # shape becomes (N, 4)
+        labels = data['label']
 
         if msg.header.frame_id != self.output_frame:
 
@@ -56,9 +56,54 @@ class ClusterDetector:
         points[3, :] = 1
         # transform points to target frame
         points = points.dot(tf_matrix.T)
-        print("Points shape: ", points.shape)
-        print("Points 1st LINE: ", points[0])
-        print("tf matrix shape: ", tf_matrix.shape)
+
+
+        unique_labels = np.unique(labels)
+
+        clusters = DetectedObjectArray()
+        clusters.header.stamp = msg.header.stamp
+        clusters.header.frame_id = self.output_frame
+
+        for i in unique_labels:
+            if i == -1:
+                continue  # skip noise
+
+            # create mask
+            mask = (labels == i)
+            # select points for one object from an array using a mask
+            # rows are selected using a binary mask, and only the first 3 columns are selected: x, y, and z coordinates
+            points3d = points[mask, :3]
+
+            if len(points3d) < self.min_cluster_size:
+                continue # skip sparse clusters
+
+            centroid = np.mean(points3d, axis=0)
+
+            # create convex hull
+            points_2d = MultiPoint(points[mask, :2])
+            hull = points_2d.convex_hull
+            convex_hull_points = [a for hull in [[x, y, centroid[2]] for x, y in hull.exterior.coords] for a in hull]
+
+            object = DetectedObject()
+
+            object.centroid.x = centroid[0]
+            object.centroid.y = centroid[1]
+            object.centroid.z = centroid[2]
+
+            object.convex_hull = convex_hull_points
+
+            object.label = "unknown"
+            object.id = i
+            object.color = BLUE80P
+            object.valid = True
+            object.position_reliable = True
+            object.velocity_reliable = False
+            object.acceleration_reliable = False
+
+            clusters.objects.append(object)
+
+
+        self.objects_pub.publish(clusters)
 
 
     def run(self):
