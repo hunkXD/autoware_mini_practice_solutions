@@ -73,13 +73,21 @@ class LocalPathExtractor:
                 global_path_linestring = self.global_path_linestring
                 global_path_velocities = self.global_path_velocities
 
+            if current_pose is None:
+                return
+
             local_path = Path()
             local_path.header = current_pose.header
 
-            self.local_path_pub.publish(local_path)
+
+            if global_path_xyz is None:
+                self.local_path_pub.publish(local_path)
+                return
 
             current_position = Point(current_pose.pose.position.x, current_pose.pose.position.y)
 
+            if global_path_linestring is None:
+                return
             ego_distance_from_global_path_start = global_path_linestring.project(current_position)
 
 #            global_path_distances = np.cumsum(global_path_xyz[:,:2], axis=1)
