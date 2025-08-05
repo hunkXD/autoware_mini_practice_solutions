@@ -72,20 +72,17 @@ class SpeedPlanner:
             local_path_xyz = np.array([[wp.position.x, wp.position.y] for wp in local_path_msg.waypoints])
             path_linestring = LineString(local_path_xyz)
 
-            try:
-                collision_points_geom = [Point(p.tolist()) for p in collision_points]
-            except Exception as e:
-                rospy.logwarn("Could not parse collision points: %s", str(e))
-                return
+            collision_points_geom = [Point(p['x'], p['y']) for p in collision_points]
 
             distances_to_collisions = [path_linestring.project(p) for p in collision_points_geom]
 
             target_velocities = [
-                max(0.0, math.sqrt(
-                    current_speed ** 2 + 2 * self.default_deceleration * s))
-                for s in distances_to_collisions
+                max(0.0,
+                    math.sqrt(current_speed ** 2 + 2 * self.default_deceleration * (
+                                d - self.distance_to_car_front - p['distance_to_stop']))
+                    )
+                for d, p in zip(distances_to_collisions, collision_points)
             ]
-
             min_target_velocity = min(target_velocities)
 
             for i, wp in enumerate(local_path_msg.waypoints):
