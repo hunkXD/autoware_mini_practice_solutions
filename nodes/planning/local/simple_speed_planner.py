@@ -13,7 +13,8 @@ from autoware_mini.msg import Path, Log
 from sensor_msgs.msg import PointCloud2
 from geometry_msgs.msg import PoseStamped, TwistStamped, Vector3
 from autoware_mini.geometry import project_vector_to_heading, get_distance_between_two_points_2d
-
+from scipy.interpolate import interp1d
+from shapely.geometry import LineString, Point
 
 class SpeedPlanner:
 
@@ -61,7 +62,42 @@ class SpeedPlanner:
                 current_position = self.current_position
                 current_speed = self.current_speed
 
-            pass
+            if current_position is None or current_speed is None:
+                return
+
+            if collision_points.size == 0:
+                self.local_path_pub.publish(local_path_msg)
+                return
+
+            local_path_xyz = np.array([[wp.position.x, wp.position.y] for wp in local_path_msg.waypoints])
+            path_linestring = LineString(local_path_xyz)
+
+            collision_points_geom = [Point(p) for p in collision_points]
+            distances_to_collisions = [path_linestring.project(p) for p in collision_points_geom]
+
+            target_velocities = [
+                max(0.0, math.sqrt(
+                    2 * self.default_deceleration * d) - self.default_deceleration * self.braking_reaction_time)
+                for d in distances_to_collisions
+            ]
+
+            min_target_velocity = min(target_velocities)
+
+            for i, wp in enumerate(local_path_msg.waypoints):
+                wp.speed = min(min_target_velocity, wp.speed)
+
+            # Update the lane message with the calculated values
+            path = Path()
+            path.header = local_path_msg.header
+            path.waypoints = local_path_msg.waypoints
+#            path.closest_object_distance = closest_object_distance  # Distance to the collision point with lowest target velocity (also closest object for now)
+            path.closest_object_velocity = 0  # Velocity of the collision point with lowest target velocity (0)
+            path.is_blocked = True
+#            path.stopping_point_distance = closest_object_distance  # Stopping point distance can be set to the distance to the closest object for now
+#            path.collision_point_category = collision_point_category  # Category of collision point with lowest target velocity
+            self.local_path_pub.publish(path)
+
+            self.local_path_pub.publish(local_path_msg)
 
         except Exception as e:
             rospy.logerr_throttle(10, "%s - Exception in callback: %s", rospy.get_name(), traceback.format_exc())
