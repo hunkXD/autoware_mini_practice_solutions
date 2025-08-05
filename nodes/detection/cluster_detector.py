@@ -53,7 +53,7 @@ class ClusterDetector:
         # make copy of points
         points = points.copy()
         # turn into homogeneous coordinates
-        points[3, :] = 1
+        points[:, 3] = 1
         # transform points to target frame
         points = points.dot(tf_matrix.T)
 
