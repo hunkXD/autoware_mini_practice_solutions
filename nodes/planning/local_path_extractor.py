@@ -9,7 +9,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 from autoware_mini.msg import Path, Waypoint
 from geometry_msgs.msg import PoseStamped
-
+from shapely.geometry import Point
 
 class LocalPathExtractor:
 
@@ -73,28 +73,28 @@ class LocalPathExtractor:
                 global_path_linestring = self.global_path_linestring
                 global_path_velocities = self.global_path_velocities
 
-            if current_pose is None:
-                return
-
             local_path = Path()
             local_path.header = current_pose.header
 
-            print('Current pose:', current_pose.pose.position.x, current_pose.pose.position.y,
-                  current_pose.pose.position.z)
             self.local_path_pub.publish(local_path)
-            return
 
-            if global_path_xyz is None:
-                self.local_path_pub.publish(local_path)
-                return
+            current_position = Point(current_pose.pose.position.x, current_pose.pose.position.y)
 
-            current_position = None
+            ego_distance_from_global_path_start = global_path_linestring.project(current_position)
 
-            ego_distance_from_global_path_start = None
+#            global_path_distances = np.cumsum(global_path_xyz[:,:2], axis=1)
 
-            global_path_distances = None
+            # Step 1: Compute differences between consecutive x and y coordinates
+            dx = np.diff(global_path_xyz[:, 0])
+            dy = np.diff(global_path_xyz[:, 1])
 
-            global_path_velocities_interpolator = None
+            # Step 2: Compute segment distances
+            segment_lengths = np.sqrt(dx ** 2 + dy ** 2)
+
+            # Step 3: Cumulative sum to get distance from start
+            global_path_distances = np.insert(np.cumsum(segment_lengths), 0, 0.0)
+
+            global_path_velocities_interpolator = interp1d(global_path_distances, global_path_velocities, bounds_error = False)
 
             # extract local path using distances and velocities interpolator
             local_path_waypoints = self.extract_waypoints(global_path_linestring, global_path_distances,
