@@ -71,11 +71,11 @@ class CollisionPointsManager:
                     intersection_points = shapely.get_coordinates(intersection_result)
                     object_speed = get_speed_from_velocity(object.velocity)
 
-                for x, y in intersection_points:
-                    collision_points = np.append(collision_points, np.array(
-                        [(x, y, object.centroid.z, object.velocity.x, object.velocity.y, object.velocity.z,
-                          self.braking_safety_distance_obstacle, np.inf,
-                          3 if object_speed < self.stopped_speed_limit else 4)], dtype=DTYPE))
+                    for x, y in intersection_points:
+                        collision_points = np.append(collision_points, np.array(
+                            [(x, y, object.centroid.z, object.velocity.x, object.velocity.y, object.velocity.z,
+                              self.braking_safety_distance_obstacle, np.inf,
+                              3 if object_speed < self.stopped_speed_limit else 4)], dtype=DTYPE))
 
             collision_points_msg = msgify(PointCloud2, collision_points)
             collision_points_msg.header = msg.header
