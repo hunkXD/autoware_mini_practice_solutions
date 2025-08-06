@@ -76,17 +76,28 @@ class SpeedPlanner:
 
             distances_to_collisions = [path_linestring.project(p) for p in collision_points_geom]
 
-            target_velocities = [
-                max(0.0,
-                    math.sqrt(current_speed ** 2 + 2 * self.default_deceleration * (
-                                d - self.distance_to_car_front - p['distance_to_stop']))
-                    )
-                for d, p in zip(distances_to_collisions, collision_points)
-            ]
-            min_target_velocity = min(target_velocities)
+            for d, p in zip(distances_to_collisions, collision_points):
+                target_velocities = [
+                    max(0.0,
+                        math.sqrt(current_speed ** 2 + 2 * self.default_deceleration * (
+                                    d - self.distance_to_car_front - p['distance_to_stop']))
+                        )
+                ]
+                min_target_velocity = min(target_velocities)
+
+                # Check if any point requires a hard stop (deceleration_limit == 0 or close to 0)
+                if any(d <= p['distance_to_stop']):
+                    path = Path()
+                    path.header = local_path_msg.header
+                    path.waypoints = []
+                    path.closest_object_velocity = 0.0
+                    path.is_blocked = True
+                    self.local_path_pub.publish(path)
+                    return
 
             for i, wp in enumerate(local_path_msg.waypoints):
                 wp.speed = min(min_target_velocity, wp.speed)
+
 
             # Update the lane message with the calculated values
             path = Path()
@@ -98,8 +109,6 @@ class SpeedPlanner:
 #            path.stopping_point_distance = closest_object_distance  # Stopping point distance can be set to the distance to the closest object for now
 #            path.collision_point_category = collision_point_category  # Category of collision point with lowest target velocity
             self.local_path_pub.publish(path)
-
-            self.local_path_pub.publish(local_path_msg)
 
         except Exception as e:
             rospy.logerr_throttle(10, "%s - Exception in callback: %s", rospy.get_name(), traceback.format_exc())
