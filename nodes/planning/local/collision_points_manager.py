@@ -82,7 +82,7 @@ class CollisionPointsManager:
             # Publish the merged collision points
             self.local_path_collision_pub.publish(collision_points_msg)
 
-            print("Collision Points: ", collision_points)
+#            print("Collision Points: ", collision_points)
 
     def run(self):
         rospy.spin()

@@ -112,6 +112,14 @@ class CameraTrafficLightDetector:
             self.stoplines_on_path = stoplines_on_path
             self.transform_from_frame = local_path_msg.header.frame_id
 
+        if len(local_path_msg.waypoints) > 0:
+            local_path = LineString([(wp.position.x, wp.position.y) for wp in local_path_msg.waypoints])
+
+            for stoplineID, stopline in self.tfl_stoplines.items():
+                if local_path.intersects(stopline):
+                    stoplines_on_path.append(stoplineID)
+                    print('stoplineID: ', stoplineID)
+
     def camera_image_callback(self, camera_image_msg):
 
         if self.camera_model is None:
@@ -126,7 +134,7 @@ class CameraTrafficLightDetector:
             stoplines_on_path = self.stoplines_on_path
             transform_from_frame = self.transform_from_frame
 
-        
+        print('stoplines on Path: ', stoplines_on_path)
         traffic_light_msg = TrafficLightResultArray()
         traffic_light_msg.header.stamp = camera_image_msg.header.stamp
 
