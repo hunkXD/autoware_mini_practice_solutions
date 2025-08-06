@@ -73,65 +73,56 @@ class SpeedPlanner:
             path_linestring = LineString(local_path_xyz)
 
             collision_points_geom = [Point(p['x'], p['y']) for p in collision_points]
+            distances_to_collisions = np.array([path_linestring.project(p) for p in collision_points_geom])
 
-            distances_to_collisions = [path_linestring.project(p) for p in collision_points_geom]
-
-            # 1. Compute heading angle at each collision point's distance on the path
+            # Compute heading at each collision point
             collision_point_path_headings = [
-                self.get_heading_at_distance(path_linestring, distance)
-                for distance in distances_to_collisions
+                self.get_heading_at_distance(path_linestring, d)
+                for d in distances_to_collisions
             ]
 
-            # 2. Project object velocity onto ego's heading
+            # Project velocity to path heading
             collision_point_velocities = []
             for heading, p in zip(collision_point_path_headings, collision_points):
-                velocity_vector = Vector3(p['vx'], p['vy'], p['vz'])
+                v = Vector3(p['vx'], p['vy'], p['vz'])
+                projected_speed = self.project_vector_to_heading(heading, v)
+                collision_point_velocities.append(projected_speed)
 
-                # Project object velocity onto path heading
-                projected_velocity = self.project_vector_to_heading(heading, velocity_vector)
-
-                # Actual object speed (norm of vector)
                 object_speed = np.linalg.norm([p['vx'], p['vy']])
+                rospy.loginfo_throttle(5.0,
+                                       f"Object speed: {object_speed:.2f} m/s, Projected speed along path: {projected_speed:.2f} m/s")
 
-                rospy.loginfo_throttle(5.0, f"Object speed: {object_speed:.2f} m/s, "
-                                            f"Projected speed along path: {projected_velocity:.2f} m/s")
-
-                collision_point_velocities.append(projected_velocity)
-
-            # Convert to NumPy array for further use if needed
             collision_point_velocities = np.array(collision_point_velocities)
+            distance_to_stop = np.array([p['distance_to_stop'] for p in collision_points])
 
-            for d, p in zip(distances_to_collisions, collision_points):
-                target_velocities = [
-                    max(0.0,
-                        math.sqrt(current_speed ** 2 + 2 * self.default_deceleration * (
-                                    d - self.distance_to_car_front - p['distance_to_stop']))
-                        )
-                ]
-                min_target_velocity = min(target_velocities)
+            # Calculate target velocities for all points
+            target_velocities = np.maximum(0.0,
+                                           collision_point_velocities + np.sqrt(
+                                               current_speed ** 2 + 2 * self.default_deceleration * (
+                                                           distances_to_collisions - self.distance_to_car_front - distance_to_stop)
+                                           )
+                                           )
 
-                # Check if any point requires a hard stop (deceleration_limit == 0 or close to 0)
-                if d <= p['distance_to_stop']:
-                    path = Path()
-                    path.header = local_path_msg.header
-                    path.waypoints = []
-                    path.closest_object_velocity = 0.0
-                    path.is_blocked = True
-                    self.local_path_pub.publish(path)
-                    return
+            # Pick the one that requires the lowest target velocity
+            min_index = np.argmin(target_velocities)
+            min_target_velocity = target_velocities[min_index]
 
-            for i, wp in enumerate(local_path_msg.waypoints):
+            closest_object_distance = distances_to_collisions[min_index]
+            closest_object_velocity = collision_point_velocities[min_index]
+            stopping_point_distance = closest_object_distance - distance_to_stop[min_index]
+
+            # 5. Overwrite waypoint speeds with the minimum target speed
+            for wp in local_path_msg.waypoints:
                 wp.speed = min(min_target_velocity, wp.speed)
-
 
             # Update the lane message with the calculated values
             path = Path()
             path.header = local_path_msg.header
             path.waypoints = local_path_msg.waypoints
-#            path.closest_object_distance = closest_object_distance  # Distance to the collision point with lowest target velocity (also closest object for now)
+            path.closest_object_distance = closest_object_distance  # Distance to the collision point with lowest target velocity (also closest object for now)
             path.closest_object_velocity = 0  # Velocity of the collision point with lowest target velocity (0)
             path.is_blocked = True
-#            path.stopping_point_distance = closest_object_distance  # Stopping point distance can be set to the distance to the closest object for now
+            path.stopping_point_distance = closest_object_distance  # Stopping point distance can be set to the distance to the closest object for now
 #            path.collision_point_category = collision_point_category  # Category of collision point with lowest target velocity
             self.local_path_pub.publish(path)
 
