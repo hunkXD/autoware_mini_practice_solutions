@@ -76,6 +76,31 @@ class SpeedPlanner:
 
             distances_to_collisions = [path_linestring.project(p) for p in collision_points_geom]
 
+            # 1. Compute heading angle at each collision point's distance on the path
+            collision_point_path_headings = [
+                self.get_heading_at_distance(path_linestring, distance)
+                for distance in distances_to_collisions
+            ]
+
+            # 2. Project object velocity onto ego's heading
+            collision_point_velocities = []
+            for heading, p in zip(collision_point_path_headings, collision_points):
+                velocity_vector = Vector3(p['vx'], p['vy'], p['vz'])
+
+                # Project object velocity onto path heading
+                projected_velocity = self.project_vector_to_heading(heading, velocity_vector)
+
+                # Actual object speed (norm of vector)
+                object_speed = np.linalg.norm([p['vx'], p['vy']])
+
+                rospy.loginfo_throttle(5.0, f"Object speed: {object_speed:.2f} m/s, "
+                                            f"Projected speed along path: {projected_velocity:.2f} m/s")
+
+                collision_point_velocities.append(projected_velocity)
+
+            # Convert to NumPy array for further use if needed
+            collision_point_velocities = np.array(collision_point_velocities)
+
             for d, p in zip(distances_to_collisions, collision_points):
                 target_velocities = [
                     max(0.0,
@@ -86,7 +111,7 @@ class SpeedPlanner:
                 min_target_velocity = min(target_velocities)
 
                 # Check if any point requires a hard stop (deceleration_limit == 0 or close to 0)
-                if any(d <= p['distance_to_stop']):
+                if d <= p['distance_to_stop']:
                     path = Path()
                     path.header = local_path_msg.header
                     path.waypoints = []

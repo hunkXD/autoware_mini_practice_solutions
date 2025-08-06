@@ -104,7 +104,7 @@ class CollisionPointsManager:
                               3 if object_speed < self.stopped_speed_limit else 4)], dtype=DTYPE))
 
             collision_points_msg = msgify(PointCloud2, collision_points)
-            
+
             # === Traffic Light Stopline Collision Points ===
             if hasattr(self, "stopline_statuses") and hasattr(self, "stopline_id_to_position"):
                 for stopline_id, (x, y) in self.stopline_id_to_position.items():
