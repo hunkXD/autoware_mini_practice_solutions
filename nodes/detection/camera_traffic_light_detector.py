@@ -118,7 +118,6 @@ class CameraTrafficLightDetector:
             for stoplineID, stopline in self.tfl_stoplines.items():
                 if local_path.intersects(stopline):
                     stoplines_on_path.append(stoplineID)
-                    print('stoplineID: ', stoplineID)
 
     def camera_image_callback(self, camera_image_msg):
 
@@ -134,7 +133,6 @@ class CameraTrafficLightDetector:
             stoplines_on_path = self.stoplines_on_path
             transform_from_frame = self.transform_from_frame
 
-        print('stoplines on Path: ', stoplines_on_path)
         traffic_light_msg = TrafficLightResultArray()
         image_time_stamp = camera_image_msg.header.stamp
         traffic_light_msg.header.stamp = image_time_stamp
@@ -155,7 +153,12 @@ class CameraTrafficLightDetector:
                 return
 
             rois = self.calculate_roi_coordinates(stoplines_on_path, transform)
-            print('ROIS: ', rois)
+
+            if len(rois) > 0:
+                roi_images = self.create_roi_images(image, rois)
+                # run model and do prediction
+                predictions = self.model.run(None, {'conv2d_1_input': roi_images})[0]
+                print('predictions: ', predictions)
 
         self.publish_roi_images(image, [], [], [], camera_image_msg.header.stamp)
 
@@ -209,7 +212,14 @@ class CameraTrafficLightDetector:
         return rois
 
     def create_roi_images(self, image, rois):
-        pass
+        roi_images = []
+        for _, _, min_u, max_u, min_v, max_v in rois:
+            roi_image = image[min_v:max_v, min_u:max_u, :]
+            roi_image = cv2.resize(roi_image, (128, 128), interpolation=cv2.INTER_LINEAR)
+            roi_image = roi_image.astype(np.float32)
+            roi_images.append(roi_image)
+
+        return np.stack(roi_images, axis=0) / 255.0
 
     def publish_roi_images(self, image, rois, classes, scores, image_time_stamp):
 
