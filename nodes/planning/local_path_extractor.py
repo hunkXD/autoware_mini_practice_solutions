@@ -111,9 +111,9 @@ class LocalPathExtractor:
 
             local_path = Path()
             local_path.header = current_pose.header
-            local_path.waypoints = local_path_waypoints
-
+            local_path.waypoints = local_path_waypoints if local_path_waypoints is not None else []
             self.local_path_pub.publish(local_path)
+            
         except Exception as e:
             rospy.logerr_throttle(10, "%s - Exception in callback: %s", rospy.get_name(), traceback.format_exc())
 

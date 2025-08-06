@@ -95,13 +95,19 @@ class SpeedPlanner:
             collision_point_velocities = np.array(collision_point_velocities)
             distance_to_stop = np.array([p['distance_to_stop'] for p in collision_points])
 
+            target_distances = self.braking_reaction_time * abs(collision_point_velocities)
             # Calculate target velocities for all points
-            target_velocities = np.maximum(0.0,
-                                           collision_point_velocities + np.sqrt(
-                                               current_speed ** 2 + 2 * self.default_deceleration * (
-                                                           distances_to_collisions - self.distance_to_car_front - distance_to_stop)
-                                           )
-                                           )
+            target_velocities = np.maximum(
+                0.0,
+                np.sqrt(
+                    np.maximum(0.0,
+                               (np.maximum(0, collision_point_velocities)) ** 2 +
+                               2 * self.default_deceleration * (
+                                       distances_to_collisions - self.distance_to_car_front - distance_to_stop - target_distances
+                               )
+                               )
+                )
+            )
 
             # Pick the one that requires the lowest target velocity
             min_index = np.argmin(target_velocities)
