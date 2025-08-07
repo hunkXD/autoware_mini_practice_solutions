@@ -113,9 +113,9 @@ class SpeedPlanner:
             min_index = np.argmin(target_velocities)
             min_target_velocity = target_velocities[min_index]
 
-            closest_object_distance = distances_to_collisions[min_index]
+            closest_object_distance = distances_to_collisions[min_index] - self.distance_to_car_front
             closest_object_velocity = collision_point_velocities[min_index]
-            stopping_point_distance = closest_object_distance - distance_to_stop[min_index]
+            stopping_point_distance = distance_to_stop[min_index]
 
             # 5. Overwrite waypoint speeds with the minimum target speed
             for wp in local_path_msg.waypoints:
@@ -128,8 +128,8 @@ class SpeedPlanner:
             path.closest_object_distance = closest_object_distance  # Distance to the collision point with lowest target velocity (also closest object for now)
             path.closest_object_velocity = 0  # Velocity of the collision point with lowest target velocity (0)
             path.is_blocked = True
-            path.stopping_point_distance = closest_object_distance  # Stopping point distance can be set to the distance to the closest object for now
-#            path.collision_point_category = collision_point_category  # Category of collision point with lowest target velocity
+            path.stopping_point_distance = stopping_point_distance  # Stopping point distance can be set to the distance to the closest object for now
+            path.closest_object_velocity = closest_object_velocity  # Category of collision point with lowest target velocity
             self.local_path_pub.publish(path)
 
         except Exception as e:
