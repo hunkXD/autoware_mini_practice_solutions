@@ -121,29 +121,28 @@ class CollisionPointsManager:
             if hasattr(self, "stopline_statuses") and hasattr(self, "stopline_id_to_position"):
                 for stopline_id, (x, y) in self.stopline_id_to_position.items():
                     status = self.stopline_statuses.get(stopline_id, -1)
-
                     # Only consider RED lights
                     if status not in [0]:
                         continue
 
                     # Check if stopline is near the path
-                    stopline_point = shapely.Point(x, y)
+                    stopline_point = Point(x, y)
                     if not local_path_buffer.contains(stopline_point):
                         continue
 
-                    speed_mps = getattr(self, "current_speed", 0.0)
-                    decel_limit = (
-                        np.inf
-                        if speed_mps < (self.tfl_force_stop_speed_limit / 3.6)
-                        else self.tfl_maximum_deceleration
-                    )
+                    stopline_point_buffer = stopline_point.buffer(0.1)
+                    if local_path_buffer.intersects(stopline_point_buffer):
+                        print("hello")
+                        collision_distance_to_stop = self.braking_safety_distance_stopline
 
-                    # Append traffic light stopline collision point
-                    collision_points = np.append(collision_points, np.array(
-                        [(x, y, 0.0, 0.0, 0.0, 0.0,
-                          self.braking_safety_distance_stopline, decel_limit,
-                          2)],  # Category 2 = Traffic Light Stopline
-                        dtype=DTYPE))
+                        # Append traffic light stopline collision point
+                        collision_points = np.append(collision_points, np.array(
+                            [(x, y, 0.0, 0.0, 0.0, 0.0,
+                              collision_distance_to_stop,
+                              np.inf,
+                              2)],
+                            dtype=DTYPE))
+                        print("Collision points: ", collision_points)
 
             # Braking
             if self.goal_waypoint is not None:
