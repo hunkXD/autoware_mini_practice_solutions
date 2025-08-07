@@ -71,7 +71,7 @@ class SpeedPlanner:
 
             local_path_xyz = np.array([[wp.position.x, wp.position.y] for wp in local_path_msg.waypoints])
             path_linestring = LineString(local_path_xyz)
-            ego_distance_from_local_path_start = path_linestring.project(current_position)
+            ego_distance_from_global_path_start = path_linestring.project(current_position)
             collision_points_geom = [Point(p['x'], p['y']) for p in collision_points]
             distances_to_collisions = np.array([path_linestring.project(p) for p in collision_points_geom])
 
@@ -113,9 +113,10 @@ class SpeedPlanner:
             min_index = np.argmin(target_velocities)
             min_target_velocity = target_velocities[min_index]
 
-            closest_object_distance = distances_to_collisions[min_index] - ego_distance_from_local_path_start - self.distance_to_car_front
+            closest_object_distance = distances_to_collisions[min_index] - ego_distance_from_global_path_start - self.distance_to_car_front
             closest_object_velocity = collision_point_velocities[min_index]
             stopping_point_distance = distances_to_collisions[min_index] - distance_to_stop[min_index]
+            collision_point_category = collision_points[min_index]["category"]
 
             # 5. Overwrite waypoint speeds with the minimum target speed
             for wp in local_path_msg.waypoints:
@@ -129,7 +130,8 @@ class SpeedPlanner:
             path.closest_object_velocity = 0  # Velocity of the collision point with lowest target velocity (0)
             path.is_blocked = True
             path.stopping_point_distance = stopping_point_distance  # Stopping point distance can be set to the distance to the closest object for now
-            path.closest_object_velocity = closest_object_velocity  # Category of collision point with lowest target velocity
+            path.closest_object_velocity = closest_object_velocity
+            path.collision_point_category = collision_point_category # Category of collision point with lowest target velocity
             self.local_path_pub.publish(path)
 
         except Exception as e:
