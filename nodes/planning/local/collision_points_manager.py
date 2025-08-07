@@ -92,32 +92,32 @@ class CollisionPointsManager:
 
         if detected_objects is None:
             rospy.logwarn("No detected objects not received!")
+            #publish empty waypoints
             empty_msg = msgify(PointCloud2, np.array([], dtype=DTYPE))
             empty_msg.header = msg.header
             self.local_path_collision_pub.publish(empty_msg)
 
+        else:
+            if msg.waypoints != [] or detected_objects != []:
+                path_linestring = LineString([(path.position.x, path.position.y) for path in msg.waypoints])
+                local_path_buffer = path_linestring.buffer(self.safety_box_width / 2, cap_style="flat")
+                shapely.prepare(local_path_buffer)
 
-        # Publish empty PointCloud
-        if msg.waypoints != [] or detected_objects != []:
-            path_linestring = LineString([(path.position.x, path.position.y) for path in msg.waypoints])
-            local_path_buffer = path_linestring.buffer(self.safety_box_width / 2, cap_style="flat")
-            shapely.prepare(local_path_buffer)
+                for object in detected_objects:
+                    object_polygon = shapely.polygons(np.array(object.convex_hull).reshape(-1, 3))
 
-            for object in detected_objects:
-                object_polygon = shapely.polygons(np.array(object.convex_hull).reshape(-1, 3))
+                    if local_path_buffer.intersects(object_polygon):
+                        intersection_result = object_polygon.intersection(local_path_buffer)
+                        intersection_points = shapely.get_coordinates(intersection_result)
+                        object_speed = get_speed_from_velocity(object.velocity)
 
-                if local_path_buffer.intersects(object_polygon):
-                    intersection_result = object_polygon.intersection(local_path_buffer)
-                    intersection_points = shapely.get_coordinates(intersection_result)
-                    object_speed = get_speed_from_velocity(object.velocity)
+                        for x, y in intersection_points:
+                            collision_points = np.append(collision_points, np.array(
+                                [(x, y, object.centroid.z, object.velocity.x, object.velocity.y, object.velocity.z,
+                                  self.braking_safety_distance_obstacle, np.inf,
+                                  3 if object_speed < self.stopped_speed_limit else 4)], dtype=DTYPE))
 
-                    for x, y in intersection_points:
-                        collision_points = np.append(collision_points, np.array(
-                            [(x, y, object.centroid.z, object.velocity.x, object.velocity.y, object.velocity.z,
-                              self.braking_safety_distance_obstacle, np.inf,
-                              3 if object_speed < self.stopped_speed_limit else 4)], dtype=DTYPE))
-
-            # === Traffic Light Stopline Collision Points ===
+            # Traffic Light Stopline Collision Points
             if hasattr(self, "stopline_statuses") and hasattr(self, "stopline_id_to_position"):
                 for stopline_id, (x, y) in self.stopline_id_to_position.items():
                     status = self.stopline_statuses.get(stopline_id, -1)
@@ -149,7 +149,7 @@ class CollisionPointsManager:
             if self.goal_waypoint is not None:
                 goal_point_geom = Point(self.goal_waypoint.position.x, self.goal_waypoint.position.y)
                 # Buffer a small area around goal point to check intersection with local path buffer
-                goal_point_buffer = goal_point_geom.buffer(self.safety_box_width / 2)
+                goal_point_buffer = goal_point_geom.buffer(0.1)
                 if local_path_buffer.intersects(goal_point_buffer):
                     collision_points = np.append(collision_points, np.array(
                         [(self.goal_waypoint.position.x, self.goal_waypoint.position.y, 0.0, 0.0, 0.0, 0.0,
@@ -157,15 +157,11 @@ class CollisionPointsManager:
                           1)],
                         dtype=DTYPE))
 
+
             # Publish collision points or empty if none
-            if collision_points.size == 0:
-                empty_msg = msgify(PointCloud2, np.array([], dtype=DTYPE))
-                empty_msg.header = msg.header
-                self.local_path_collision_pub.publish(empty_msg)
-            else:
-                collision_points_msg = msgify(PointCloud2, collision_points)
-                collision_points_msg.header = msg.header
-                self.local_path_collision_pub.publish(collision_points_msg)
+            collision_points_msg = msgify(PointCloud2, collision_points)
+            collision_points_msg.header = msg.header
+            self.local_path_collision_pub.publish(collision_points_msg)
 
     def run(self):
         rospy.spin()

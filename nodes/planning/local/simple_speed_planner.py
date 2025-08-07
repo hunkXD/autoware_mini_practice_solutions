@@ -71,7 +71,7 @@ class SpeedPlanner:
 
             local_path_xyz = np.array([[wp.position.x, wp.position.y] for wp in local_path_msg.waypoints])
             path_linestring = LineString(local_path_xyz)
-
+            ego_distance_from_local_path_start = path_linestring.project(current_position)
             collision_points_geom = [Point(p['x'], p['y']) for p in collision_points]
             distances_to_collisions = np.array([path_linestring.project(p) for p in collision_points_geom])
 
@@ -113,9 +113,9 @@ class SpeedPlanner:
             min_index = np.argmin(target_velocities)
             min_target_velocity = target_velocities[min_index]
 
-            closest_object_distance = distances_to_collisions[min_index] - self.distance_to_car_front
+            closest_object_distance = distances_to_collisions[min_index] - ego_distance_from_local_path_start - self.distance_to_car_front
             closest_object_velocity = collision_point_velocities[min_index]
-            stopping_point_distance = distance_to_stop[min_index]
+            stopping_point_distance = distances_to_collisions[min_index] - distance_to_stop[min_index]
 
             # 5. Overwrite waypoint speeds with the minimum target speed
             for wp in local_path_msg.waypoints:
