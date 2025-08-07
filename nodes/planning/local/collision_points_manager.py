@@ -44,14 +44,11 @@ class CollisionPointsManager:
 
         self.stopline_statuses = {}
         self.lanelet2_map = load_lanelet2_map(self.lanelet2_map_path)
-        self.all_stoplines = get_traffic_light_stop_lines(self.lanelet2_map)
-
-        self.stopline_id_to_position = {}
-        stoplines = get_traffic_light_stop_lines(self.lanelet2_map)
-
-        for stopline_id, stopline in stoplines.items():
-            # Take first point of line string
-            self.stopline_id_to_position[stopline_id] = (stopline.coords[0][0], stopline.coords[0][1])
+        # Extract all stop lines and signals from the lanelet2 map
+        all_stoplines = get_stoplines(self.lanelet2_map)
+        self.trafficlights = get_stoplines_trafficlights(self.lanelet2_map)
+        # If stopline_id is not in self.signals then it has no signals (traffic lights)
+        self.tfl_stoplines = {k: v for k, v in all_stoplines.items() if k in self.trafficlights}
 
         # Lock for thread safety
         self.lock = threading.Lock()
@@ -92,69 +89,62 @@ class CollisionPointsManager:
 
         if detected_objects is None:
             rospy.logwarn("No detected objects not received!")
+
+        if msg.waypoints is None:
             #publish empty waypoints
             empty_msg = msgify(PointCloud2, np.array([], dtype=DTYPE))
             empty_msg.header = msg.header
             self.local_path_collision_pub.publish(empty_msg)
+            return
 
-        else:
-            if msg.waypoints != [] or detected_objects != []:
-                path_linestring = LineString([(path.position.x, path.position.y) for path in msg.waypoints])
-                local_path_buffer = path_linestring.buffer(self.safety_box_width / 2, cap_style="flat")
-                shapely.prepare(local_path_buffer)
+        path_linestring = LineString([(path.position.x, path.position.y) for path in msg.waypoints])
+        local_path_buffer = path_linestring.buffer(self.safety_box_width / 2, cap_style="flat")
 
-                for object in detected_objects:
-                    object_polygon = shapely.polygons(np.array(object.convex_hull).reshape(-1, 3))
+        if detected_objects is not None and len(detected_objects) > 0:
+            shapely.prepare(local_path_buffer)
 
-                    if local_path_buffer.intersects(object_polygon):
-                        intersection_result = object_polygon.intersection(local_path_buffer)
-                        intersection_points = shapely.get_coordinates(intersection_result)
-                        object_speed = get_speed_from_velocity(object.velocity)
+            for object in detected_objects:
+                object_polygon = shapely.polygons(np.array(object.convex_hull).reshape(-1, 3))
 
-                        for x, y in intersection_points:
-                            collision_points = np.append(collision_points, np.array(
-                                [(x, y, object.centroid.z, object.velocity.x, object.velocity.y, object.velocity.z,
-                                  self.braking_safety_distance_obstacle, np.inf,
-                                  3 if object_speed < self.stopped_speed_limit else 4)], dtype=DTYPE))
+                if local_path_buffer.intersects(object_polygon):
+                    intersection_result = object_polygon.intersection(local_path_buffer)
+                    intersection_points = shapely.get_coordinates(intersection_result)
+                    object_speed = get_speed_from_velocity(object.velocity)
 
-            # Traffic Light Stopline Collision Points
-            if hasattr(self, "stopline_statuses") and hasattr(self, "stopline_id_to_position"):
-                for stopline_id, (x, y) in self.stopline_id_to_position.items():
-                    status = self.stopline_statuses.get(stopline_id, -1)
-                    # Only consider RED lights
-                    if status not in [0]:
-                        continue
+                    for x, y in intersection_points:
+                        collision_points = np.append(collision_points, np.array(
+                            [(x, y, object.centroid.z, object.velocity.x, object.velocity.y, object.velocity.z,
+                              self.braking_safety_distance_obstacle, np.inf,
+                              3 if object_speed < self.stopped_speed_limit else 4)], dtype=DTYPE))
 
-                    # Check if stopline is near the path
-                    stopline_point = Point(x, y)
-                    if not local_path_buffer.contains(stopline_point):
-                        continue
-
-                    stopline_point_buffer = stopline_point.buffer(0.1)
-                    if local_path_buffer.intersects(stopline_point_buffer):
-                        print("hello")
+        # Traffic Light Stopline Collision Points
+        if self.stopline_statuses is not None and self.tfl_stoplines is not None:
+            for stopline_id, stopline in self.tfl_stoplines.items():
+                status = self.stopline_statuses.get(stopline_id, -1)
+                if status == 0:
+                    if stopline.intersects(path_linestring):
+                        intersection_result = stopline.intersection(path_linestring)
                         collision_distance_to_stop = self.braking_safety_distance_stopline
 
                         # Append traffic light stopline collision point
                         collision_points = np.append(collision_points, np.array(
-                            [(x, y, 0.0, 0.0, 0.0, 0.0,
+                            [(intersection_result.x, intersection_result.y, 0.0, 0.0, 0.0, 0.0,
                               collision_distance_to_stop,
                               np.inf,
                               2)],
                             dtype=DTYPE))
-                        print("Collision points: ", collision_points)
 
-            # Braking
-            if self.goal_waypoint is not None:
-                goal_point_geom = Point(self.goal_waypoint.position.x, self.goal_waypoint.position.y)
-                # Buffer a small area around goal point to check intersection with local path buffer
-                goal_point_buffer = goal_point_geom.buffer(0.1)
-                if local_path_buffer.intersects(goal_point_buffer):
-                    collision_points = np.append(collision_points, np.array(
-                        [(self.goal_waypoint.position.x, self.goal_waypoint.position.y, 0.0, 0.0, 0.0, 0.0,
-                          self.braking_safety_distance_goal, np.inf,
-                          1)],
-                        dtype=DTYPE))
+        # Braking
+        if self.goal_waypoint is not None:
+            goal_point_geom = Point(self.goal_waypoint.position.x, self.goal_waypoint.position.y)
+            # Buffer a small area around goal point to check intersection with local path buffer
+            goal_point_buffer = goal_point_geom.buffer(0.1)
+            if local_path_buffer.intersects(goal_point_buffer):
+                collision_points = np.append(collision_points, np.array(
+                    [(self.goal_waypoint.position.x, self.goal_waypoint.position.y, 0.0, 0.0, 0.0, 0.0,
+                      self.braking_safety_distance_goal, np.inf,
+                      1)],
+                    dtype=DTYPE))
 
 
             # Publish collision points or empty if none
@@ -164,6 +154,54 @@ class CollisionPointsManager:
 
     def run(self):
         rospy.spin()
+
+def get_stoplines(lanelet2_map):
+    """
+    Add all stop lines to a dictionary with stop_line id as key and stop_line as value
+    :param lanelet2_map: lanelet2 map
+    :return: {stop_line_id: stopline, ...}
+    """
+
+    stoplines = {}
+    for line in lanelet2_map.lineStringLayer:
+        if line.attributes:
+            if line.attributes["type"] == "stop_line":
+                # add stoline to dictionary and convert it to shapely LineString
+                stoplines[line.id] = LineString([(p.x, p.y) for p in line])
+
+    return stoplines
+
+
+def get_stoplines_trafficlights(lanelet2_map):
+    """
+    Iterate over all regulatory_elements with subtype traffic light and extract the stoplines and sinals.
+    Organize the data into dictionary indexed by stopline id that contains a traffic_light id and the four coners of the traffic light.
+    :param lanelet2_map: lanelet2 map
+    :return: {stopline_id: {traffic_light_id: {'top_left': [x, y, z], 'top_right': [...], 'bottom_left': [...], 'bottom_right': [...]}, ...}, ...}
+    """
+
+    signals = {}
+
+    for reg_el in lanelet2_map.regulatoryElementLayer:
+        if reg_el.attributes["subtype"] == "traffic_light":
+            # ref_line is the stop line and there is only 1 stopline per traffic light reg_el
+            linkId = reg_el.parameters["ref_line"][0].id
+
+            for tfl in reg_el.parameters["refers"]:
+                tfl_height = float(tfl.attributes["height"])
+                # plId represents the traffic light (pole), one stop line can be associated with multiple traffic lights
+                plId = tfl.id
+
+                traffic_light_data = {'top_left': [tfl[0].x, tfl[0].y, tfl[0].z + tfl_height],
+                                      'top_right': [tfl[1].x, tfl[1].y, tfl[1].z + tfl_height],
+                                      'bottom_left': [tfl[0].x, tfl[0].y, tfl[0].z],
+                                      'bottom_right': [tfl[1].x, tfl[1].y, tfl[1].z]}
+
+                # signals is a dictionary indexed by stopline id and contains dictionary of traffic lights indexed by pole id
+                # which in turn contains a dictionary of traffic light corners
+                signals.setdefault(linkId, {}).setdefault(plId, traffic_light_data)
+
+    return signals
 
 if __name__ == '__main__':
     rospy.init_node('collision_points_manager')
